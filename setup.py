@@ -5,7 +5,7 @@ from setuptools import find_packages, setup
 from setuptools.command.install import install
 
 
-VERSION = "0.3.0"
+VERSION = "0.5.0"
 DESCRIPTION = open("README.md", encoding="utf-8").read()
 
 
@@ -44,10 +44,9 @@ setup(
     classifiers=[
         "Framework :: Django",
         "Programming Language :: Python",
-        "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
     ],
-    python_requires=">=3.6",
+    python_requires=">=3.7",
     cmdclass={"verify": VerifyVersionCommand},
 )
