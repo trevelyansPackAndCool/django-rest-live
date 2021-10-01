@@ -241,7 +241,12 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
 
                 # If the instance has been seen, then we should get it from the database to serialize and
                 # send the delete message.
-                instance = model.objects.get(pk=instance_pk)
+                try:
+                    instance = model.objects.get(pk=instance_pk)
+                except:
+                    # Instance wasn't removed from subscription due to filters/permissions, it was actually deleted
+                    # return an empty instance with the appropriate ID
+                    instance = model(pk=instance_pk)
                 action = DELETED
 
             serializer_class = view.get_serializer_class()
