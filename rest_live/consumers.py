@@ -23,6 +23,7 @@ class Subscription:
     action: str
     view_kwargs: Dict[str, Union[int, str]]
     query_params: Dict[str, Union[int, str]]
+    return_all: bool
 
     # To determine if an instance should be considered "created" or "deleted", we need
     # to keep track of all the instances that a given subscription currently considers
@@ -118,6 +119,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
             lookup_value = content.get("lookup_by", None)
             view_kwargs = content.get("view_kwargs", dict())
             query_params = content.get("query_params", dict())
+            return_all = content.get("return_all", False)
 
             view = self.registry[model_label].from_scope(
                 view_action, self.scope, view_kwargs, query_params
@@ -166,6 +168,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
                     pks_in_queryset=set(
                         [inst["pk"] for inst in view.get_queryset().all().values("pk")]
                     ),
+                    return_all=return_all
                 )
             )
 
@@ -231,7 +234,9 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
 
             is_existing_instance = instance_pk in subscription.pks_in_queryset
             try:
-                instance = view.filter_queryset(view.get_queryset()).get(pk=instance_pk)
+                instance = view.filter_queryset(view.get_queryset())
+                if not subscription.return_all:
+                    instance = instance.get(pk=instance_pk)
                 action = UPDATED if is_existing_instance else CREATED
             except model.DoesNotExist:
                 if not is_existing_instance:
@@ -257,6 +262,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
                     "format": "json",  # TODO: change this to be general based on content negotiation
                     "view": view,
                 },
+                many=subscription.return_all
             ).data
 
             if action == DELETED:
