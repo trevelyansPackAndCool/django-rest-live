@@ -235,7 +235,9 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
             is_existing_instance = instance_pk in subscription.pks_in_queryset
             try:
                 instance = view.filter_queryset(view.get_queryset())
-                if not subscription.return_all:
+                if subscription.return_all:
+                    instance = view.paginate_queryset(instance)
+                else:
                     instance = instance.get(pk=instance_pk)
                 action = UPDATED if is_existing_instance else CREATED
             except model.DoesNotExist:
