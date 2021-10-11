@@ -159,15 +159,14 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
             group_name = get_group_name(model_label)
             print(f"[REST-LIVE] got subscription to {group_name}")
 
+            view_queryset = view.paginate_queryset(view.filter_queryset(view.get_queryset()))
             self.subscriptions.setdefault(group_name, []).append(
                 Subscription(
                     request_id,
                     action=view_action,
                     view_kwargs=view_kwargs,
                     query_params=query_params,
-                    pks_in_queryset=set(
-                        [inst["pk"] for inst in view.get_queryset().all().values("pk")]
-                    ),
+                    pks_in_queryset=set([inst.pk for inst in view_queryset]),
                     return_all=return_all
                 )
             )
@@ -237,6 +236,9 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
                 instance = view.filter_queryset(view.get_queryset())
                 if subscription.return_all:
                     instance = view.paginate_queryset(instance)
+                    ids = [i.pk for i in instance]
+                    if not is_existing_instance and instance_pk not in ids:
+                        continue
                 else:
                     instance = instance.get(pk=instance_pk)
                 action = UPDATED if is_existing_instance else CREATED
