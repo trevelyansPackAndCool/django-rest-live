@@ -127,6 +127,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
 
             # Check to make sure client has permissions to make this subscription.
             has_permission = True
+            for permission in view.get_permissions():
                 try:
                     has_permission = has_permission and permission.has_permission(
                         view.request, view
