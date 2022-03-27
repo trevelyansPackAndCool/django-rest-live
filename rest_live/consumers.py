@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import JsonWebsocketConsumer
 from django.http import Http404
-from rest_framework.exceptions import NotAuthenticated, PermissionDenied
+from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated, PermissionDenied
 
 from rest_live import get_group_name, DELETED, UPDATED, CREATED
 from rest_live.mixins import RealtimeMixin
@@ -128,9 +128,17 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
             # Check to make sure client has permissions to make this subscription.
             has_permission = True
             for permission in view.get_permissions():
-                has_permission = has_permission and permission.has_permission(
-                    view.request, view
-                )
+                try:
+                    has_permission = has_permission and permission.has_permission(
+                        view.request, view
+                    )
+                except AuthenticationFailed:
+                    self.send_error(
+                        request_id,
+                        401,
+                        "Authentication failed. Please log in again.",
+                    )
+                    return
 
             # Retrieve actions use get_object() to check object permissions as well.
             if view.action == "retrieve":
