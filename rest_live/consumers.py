@@ -174,7 +174,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
                     action=view_action,
                     view_kwargs=view_kwargs,
                     query_params=query_params,
-                    pks_in_queryset=set([inst.pk for inst in view_queryset]),
+                    pks_in_queryset=set([inst['id'] if type(inst) == dict else inst.pk for inst in view_queryset]),
                     return_all=return_all
                 )
             )
