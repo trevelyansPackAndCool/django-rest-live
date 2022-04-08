@@ -51,6 +51,9 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
     async def __call__(self, receive, send):
         await super().__call__(self.scope, receive, send)
 
+    def get_pk_set(self, queryset):
+        return set([inst['id'] if isinstance(inst, dict) else inst.pk for inst in queryset])
+
     def connect(self):
         if not self.public and not (
             self.scope.get("user") is not None
@@ -174,7 +177,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
                     action=view_action,
                     view_kwargs=view_kwargs,
                     query_params=query_params,
-                    pks_in_queryset=set([inst['id'] if type(inst) == dict else inst.pk for inst in view_queryset]),
+                    pks_in_queryset=self.get_pk_set(view_queryset),
                     return_all=return_all
                 )
             )
@@ -244,7 +247,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
                 instance = view.filter_queryset(view.get_queryset())
                 if subscription.return_all:
                     instance = view.paginate_queryset(instance)
-                    ids = [i.pk for i in instance]
+                    ids = self.get_pk_set(instance)
                     if not is_existing_instance and instance_pk not in ids:
                         continue
                 else:
