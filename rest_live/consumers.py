@@ -231,7 +231,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
 
         viewset_class = self.registry[model_label]
 
-        for subscription in self.subscriptions[channel_name]:
+        for subscription in self.subscriptions.get(channel_name, []):
             view = viewset_class.from_scope(
                 subscription.action,
                 self.scope,
