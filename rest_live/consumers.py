@@ -44,13 +44,6 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
     registry: Dict[str, Type[RealtimeMixin]] = dict()
     public = True
 
-    def __init__(self, scope, *args, **kwargs):
-        self.scope = scope
-        super().__init__(*args, **kwargs)
-
-    async def __call__(self, receive, send):
-        await super().__call__(self.scope, receive, send)
-
     def get_pk_set(self, queryset):
         return set([inst['id'] if isinstance(inst, dict) else inst.pk for inst in queryset])
 

@@ -1,7 +1,7 @@
 from io import BytesIO
 from typing import Type, Set, Tuple, Dict, Any, Optional
 
-from channels.http import AsgiRequest
+from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Model
 from django.db.models.signals import post_save, post_delete
 from django.utils.decorators import classonlymethod
@@ -76,7 +76,7 @@ class RealtimeMixin(object):
         self.args = []
         self.kwargs = view_kwargs
 
-        base_request = AsgiRequest(
+        base_request = ASGIRequest(
             {**scope, "method": "GET", "query_string": urlencode(query_params)},
             BytesIO(),
         )
