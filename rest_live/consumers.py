@@ -50,6 +50,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
             and self.scope.get("user").is_authenticated
         ):
             self.close(code=4003)
+            return
 
         self.subscriptions: Dict[str, List[Subscription]] = dict()
         self.accept()
