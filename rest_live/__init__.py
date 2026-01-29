@@ -1,5 +1,3 @@
-default_app_config = "rest_live.apps.RestLiveConfig"
-
 DEFAULT_GROUP_BY_FIELD = "pk"
 
 
