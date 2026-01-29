@@ -1,4 +1,4 @@
-from typing import Any, Dict, Type, List, Union, Set
+from typing import Any, Dict, List, Set, Type, Union
 from dataclasses import dataclass
 
 from asgiref.sync import async_to_sync
@@ -27,9 +27,7 @@ class Subscription:
 
     # To determine if an instance should be considered "created" or "deleted", we need
     # to keep track of all the instances that a given subscription currently considers
-    # visible. This map keeps track of that and will additionally map the primary keys of
-    # each instance to the lookup field. This will probably be the main resource bottleneck
-    # in django-rest-live
+    # visible. This map tracks primary keys to lookup field values.
     pks_to_lookup_in_queryset: Dict[int, object]
 
 
@@ -46,7 +44,24 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
     public = True
 
     def get_pk_set(self, queryset):
+        if queryset is None:
+            return set()
         return set([inst['id'] if isinstance(inst, dict) else inst.pk for inst in queryset])
+
+    def get_pk_to_lookup_map(self, queryset, lookup_field):
+        """Build a dict mapping pk to lookup_field value, handling both QuerySet and list."""
+        if queryset is None:
+            return {}
+        result = {}
+        for inst in queryset:
+            if isinstance(inst, dict):
+                pk = inst.get('pk') or inst.get('id')
+                lookup_val = inst.get(lookup_field, pk)
+            else:
+                pk = inst.pk
+                lookup_val = getattr(inst, lookup_field, pk)
+            result[pk] = lookup_val
+        return result
 
     def connect(self):
         if not self.public and not (
@@ -165,20 +180,18 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
             group_name = get_group_name(model_label)
             print(f"[REST-LIVE] got subscription to {group_name}")
 
-            view_queryset = view.paginate_queryset(view.filter_queryset(view.get_queryset()))
+            filtered_queryset = view.filter_queryset(view.get_queryset())
+            view_queryset = view.paginate_queryset(filtered_queryset)
             self.subscriptions.setdefault(group_name, []).append(
                 Subscription(
                     request_id,
                     action=view_action,
                     view_kwargs=view_kwargs,
                     query_params=query_params,
-                    return_all=return_all,
-                    pks_to_lookup_in_queryset=dict(
-                        {
-                            inst["pk"]: inst[view.lookup_field]
-                            for inst in view.get_queryset().all().values("pk", view.lookup_field)
-                        }
+                    pks_to_lookup_in_queryset=self.get_pk_to_lookup_map(
+                        view_queryset or filtered_queryset, view.lookup_field
                     ),
+                    return_all=return_all,
                 )
             )
 
@@ -244,14 +257,24 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
 
             is_existing_instance = instance_pk in subscription.pks_to_lookup_in_queryset
             try:
-                instance = view.filter_queryset(view.get_queryset())
+                queryset = view.filter_queryset(view.get_queryset())
                 if subscription.return_all:
-                    instance = view.paginate_queryset(instance)
+                    instance = view.paginate_queryset(queryset)
                     ids = self.get_pk_set(instance)
                     if not is_existing_instance and instance_pk not in ids:
                         continue
                 else:
-                    instance = instance.get(pk=instance_pk)
+                    # Handle both QuerySet and list returns from get_queryset()
+                    if hasattr(queryset, 'get'):
+                        instance = queryset.get(pk=instance_pk)
+                    else:
+                        # It's a list - find the item with matching pk
+                        instance = next(
+                            (item for item in queryset if item.pk == instance_pk),
+                            None
+                        )
+                        if instance is None:
+                            raise model.DoesNotExist()
                 action = UPDATED if is_existing_instance else CREATED
             except model.DoesNotExist:
                 if not is_existing_instance:
@@ -296,7 +319,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
 
             # We don't need to check for membership since it's implicit given broadcast_data isn't None.
             if action == DELETED:
-                del subscription.pks_to_lookup_in_queryset[instance_pk]
+                subscription.pks_to_lookup_in_queryset.pop(instance_pk, None)
             else:
                 subscription.pks_to_lookup_in_queryset[instance_pk] = getattr(
                     instance, view.lookup_field
@@ -324,9 +347,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
 
             if is_existing_instance:
                 instance_data = {
-                    view.lookup_field: subscription.pks_to_lookup_in_queryset[
-                        instance_pk
-                    ],
+                    view.lookup_field: subscription.pks_to_lookup_in_queryset[instance_pk],
                     "id": instance_pk,
                 }
                 del subscription.pks_to_lookup_in_queryset[instance_pk]

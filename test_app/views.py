@@ -73,3 +73,17 @@ class AnnotatedTodoViewSet(GenericAPIView, RealtimeMixin):
 
     def get_queryset(self):
         return super().get_queryset().annotate(text_length=Length("text"))
+
+
+class ListReturningViewSet(GenericAPIView, RealtimeMixin):
+    """
+    A view that returns a list from get_queryset() instead of a QuerySet.
+    This can happen in real applications when views do custom filtering/caching.
+    """
+    queryset = Todo.objects.all()
+    serializer_class = TodoSerializer
+
+    def get_queryset(self):
+        # Return a list instead of a QuerySet - this is the scenario that caused
+        # the "'list' object has no attribute 'all'" error
+        return list(super().get_queryset())

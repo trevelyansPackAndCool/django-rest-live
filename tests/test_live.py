@@ -24,6 +24,7 @@ from test_app.views import (
     FilteredViewSet,
     AnnotatedTodoViewSet,
     LookupTodoViewSet,
+    ListReturningViewSet,
 )
 from tests.utils import RestLiveTestCase
 
@@ -424,6 +425,52 @@ class AnnotatedTodoTest(RestLiveTestCase):
         await db(todo.save)()
         res = await self.client.receive_json_from()
         self.assertEqual(res["instance"]["textLength"], len(todo_text))
+
+
+class ListReturningViewSetTest(RestLiveTestCase):
+    """
+    Tests for views where get_queryset() returns a list instead of a QuerySet.
+    This was causing "'list' object has no attribute 'all'" errors.
+    """
+
+    async def asyncSetUp(self):
+        router = RealtimeRouter()
+        router.register(ListReturningViewSet)
+        self.client = make_client(router.as_consumer(), "/ws/subscribe/")
+        connected, _ = await self.client.connect()
+        self.assertTrue(connected)
+        self.list = await db(List.objects.create)(name="test list")
+
+    async def asyncTearDown(self):
+        await self.client.disconnect()
+
+    @async_test
+    async def test_list_subscribe_with_list_queryset(self):
+        """Test that subscription works when get_queryset() returns a list."""
+        req = await self.subscribe_to_list()
+
+        # Test CREATED
+        new_todo = await self.make_todo(text="test todo")
+        await self.assertReceivedBroadcastForTodo(new_todo, CREATED, req)
+
+        # Test UPDATED
+        new_todo.text = "modified"
+        await db(new_todo.save)()
+        await self.assertReceivedBroadcastForTodo(new_todo, UPDATED, req)
+
+    @async_test
+    async def test_list_subscribe_delete_with_list_queryset(self):
+        """Test that delete broadcasts work when get_queryset() returns a list."""
+        req = await self.subscribe_to_list()
+
+        new_todo = await self.make_todo(text="to be deleted")
+        await self.assertReceivedBroadcastForTodo(new_todo, CREATED, req)
+
+        pk = new_todo.pk
+        await db(new_todo.delete)()
+        new_todo.id = pk
+        await self.assertReceivedBroadcastForTodo(new_todo, DELETED, req)
+
 
 
 class LookupTodoTest(RestLiveTestCase):
