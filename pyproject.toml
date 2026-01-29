@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "django-rest-live"
-version = "0.7.0"
+version = "0.8.0"
 description = "Subscriptions for Django REST Framework over Websockets."
 authors = ["Penn Labs <contact@pennlabs.org>"]
 license = "MIT"
@@ -18,10 +18,10 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.7"
-Django = ">=3.1"
-channels = ">=2.0.0"
-djangorestframework = ">=3.11"
+python = ">=3.8"
+Django = ">=4.2"
+channels = ">=4.0.0"
+djangorestframework = ">=3.14"
 
 [tool.poetry.dev-dependencies]
 

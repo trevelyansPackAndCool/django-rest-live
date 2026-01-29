@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import JsonWebsocketConsumer
 from django.http import Http404
-from rest_framework.exceptions import NotAuthenticated, PermissionDenied
+from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated, PermissionDenied
 
 from rest_live import get_group_name, DELETED, UPDATED, CREATED
 from rest_live.mixins import RealtimeMixin
@@ -23,6 +23,7 @@ class Subscription:
     action: str
     view_kwargs: Dict[str, Union[int, str]]
     query_params: Dict[str, Union[int, str]]
+    return_all: bool
 
     # To determine if an instance should be considered "created" or "deleted", we need
     # to keep track of all the instances that a given subscription currently considers
@@ -43,6 +44,9 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
 
     registry: Dict[str, Type[RealtimeMixin]] = dict()
     public = True
+
+    def get_pk_set(self, queryset):
+        return set([inst['id'] if isinstance(inst, dict) else inst.pk for inst in queryset])
 
     def connect(self):
         if not self.public and not (
@@ -113,6 +117,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
             lookup_value = content.get("lookup_by", None)
             view_kwargs = content.get("view_kwargs", dict())
             query_params = content.get("query_params", dict())
+            return_all = content.get("return_all", False)
 
             view = self.registry[model_label].from_scope(
                 view_action, self.scope, view_kwargs, query_params
@@ -121,9 +126,17 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
             # Check to make sure client has permissions to make this subscription.
             has_permission = True
             for permission in view.get_permissions():
-                has_permission = has_permission and permission.has_permission(
-                    view.request, view
-                )
+                try:
+                    has_permission = has_permission and permission.has_permission(
+                        view.request, view
+                    )
+                except AuthenticationFailed:
+                    self.send_error(
+                        request_id,
+                        401,
+                        "Authentication failed. Please log in again.",
+                    )
+                    return
 
             # Retrieve actions use get_object() to check object permissions as well.
             if view.action == "retrieve":
@@ -152,12 +165,14 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
             group_name = get_group_name(model_label)
             print(f"[REST-LIVE] got subscription to {group_name}")
 
+            view_queryset = view.paginate_queryset(view.filter_queryset(view.get_queryset()))
             self.subscriptions.setdefault(group_name, []).append(
                 Subscription(
                     request_id,
                     action=view_action,
                     view_kwargs=view_kwargs,
                     query_params=query_params,
+                    return_all=return_all,
                     pks_to_lookup_in_queryset=dict(
                         {
                             inst["pk"]: inst[view.lookup_field]
@@ -216,7 +231,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
 
         viewset_class = self.registry[model_label]
 
-        for subscription in self.subscriptions[channel_name]:
+        for subscription in self.subscriptions.get(channel_name, []):
             view = viewset_class.from_scope(
                 subscription.action,
                 self.scope,
@@ -229,7 +244,14 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
 
             is_existing_instance = instance_pk in subscription.pks_to_lookup_in_queryset
             try:
-                instance = view.filter_queryset(view.get_queryset()).get(pk=instance_pk)
+                instance = view.filter_queryset(view.get_queryset())
+                if subscription.return_all:
+                    instance = view.paginate_queryset(instance)
+                    ids = self.get_pk_set(instance)
+                    if not is_existing_instance and instance_pk not in ids:
+                        continue
+                else:
+                    instance = instance.get(pk=instance_pk)
                 action = UPDATED if is_existing_instance else CREATED
             except model.DoesNotExist:
                 if not is_existing_instance:
@@ -239,7 +261,12 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
 
                 # If the instance has been seen, then we should get it from the database to serialize and
                 # send the delete message.
-                instance = model.objects.get(pk=instance_pk)
+                try:
+                    instance = model.objects.get(pk=instance_pk)
+                except model.DoesNotExist:
+                    # Instance wasn't removed from subscription due to filters/permissions, it was actually deleted
+                    # return an empty instance with the appropriate ID
+                    instance = model(pk=instance_pk)
                 action = DELETED
 
             serializer_class = view.get_serializer_class()
@@ -250,6 +277,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
                     "format": "json",  # TODO: change this to be general based on content negotiation
                     "view": view,
                 },
+                many=subscription.return_all
             ).data
 
             if action == DELETED:
@@ -284,7 +312,7 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
 
         viewset_class = self.registry[model_label]
 
-        for subscription in self.subscriptions[channel_name]:
+        for subscription in self.subscriptions.get(channel_name, []):
             view = viewset_class.from_scope(
                 subscription.action,
                 self.scope,
