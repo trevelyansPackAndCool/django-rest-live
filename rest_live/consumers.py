@@ -320,6 +320,10 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
             # We don't need to check for membership since it's implicit given broadcast_data isn't None.
             if action == DELETED:
                 subscription.pks_to_lookup_in_queryset.pop(instance_pk, None)
+            elif subscription.return_all:
+                subscription.pks_to_lookup_in_queryset = self.get_pk_to_lookup_map(
+                    instance, view.lookup_field
+                )
             else:
                 subscription.pks_to_lookup_in_queryset[instance_pk] = getattr(
                     instance, view.lookup_field
