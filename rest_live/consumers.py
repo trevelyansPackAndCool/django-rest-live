@@ -72,7 +72,13 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
             return
 
         self.subscriptions: Dict[str, List[Subscription]] = dict()
-        self.accept()
+        try:
+            self.accept()
+        except RuntimeError as e:
+            if 'websocket.accept' in str(e):
+                # Client disconnected before we could accept the connection.
+                return
+            raise
 
     def send_error(self, request_id, code, message):
         self.send_json(
