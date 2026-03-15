@@ -1,10 +1,15 @@
+import logging
 from typing import Any, Dict, List, Set, Type, Union
 from dataclasses import dataclass
 
+import websockets
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import JsonWebsocketConsumer
 from django.http import Http404
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated, PermissionDenied
+from uvicorn.protocols.utils import ClientDisconnected
+
+logger = logging.getLogger(__name__)
 
 from rest_live import get_group_name, DELETED, UPDATED, CREATED
 from rest_live.mixins import RealtimeMixin
@@ -103,6 +108,17 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
                 }
             ).decode("utf-8")
         )
+
+    def send(self, text_data=None, bytes_data=None, close=False):
+        try:
+            super().send(text_data=text_data, bytes_data=bytes_data, close=close)
+        except (websockets.ConnectionClosedOK, ClientDisconnected):
+            logger.debug('WebSocket send skipped: client already disconnected')
+        except RuntimeError as e:
+            if 'after sending' in str(e):
+                logger.debug('WebSocket send skipped: connection closed after sending')
+            else:
+                raise
 
     def receive_json(self, content: Dict[str, Any], **kwargs):
         """
